@@ -1,0 +1,23 @@
+[package]
+name = "himudev"
+version = "0.1.0"
+authors = ["Mateusz Tomaszkiewicz <ressetpublic@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+embedded-hal = "0.2.3"
+hifive1 = { version = "0.8.1", features = ["board-hifive1-revb"] }
+panic-halt = "0.2.0"
+riscv = "0.5.6"
+riscv-rt = "0.7.0"
+
+[profile.dev]
+debug = true
+lto = false
+opt-level = 0
+
+[profile.release]
+codegen-units = 1
+debug = true
+lto = true
+opt-level = 3
