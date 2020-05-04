@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 embedded-hal = "0.2.3"
-hifive1 = { version = "0.8.1", features = ["board-hifive1-revb"] }
+hifive1 = { path = "himudev_bsp", features = ["board-himudev-v1"] }
 panic-halt = "0.2.0"
 riscv = "0.5.6"
 riscv-rt = "0.7.0"
