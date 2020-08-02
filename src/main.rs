@@ -3,11 +3,22 @@
 
 extern crate panic_halt;
 
-use riscv_rt::entry;
-use hifive1::hal::i2c::{I2c, Speed};
+use hifive1::hal::delay::Sleep;
 use hifive1::hal::prelude::*;
+use hifive1::hal::spi::{Spi, MODE_0};
 use hifive1::hal::DeviceResources;
-use hifive1::{pin, sprintln};
+use hifive1::{pin, pins, sprintln, Led};
+use riscv_rt::entry;
+
+// switches led according to supplied status returning the new state back
+fn toggle_led(led: &mut dyn Led, status: bool) -> bool {
+    match status {
+        true => led.on(),
+        false => led.off(),
+    }
+
+    !status
+}
 
 #[entry]
 fn main() -> ! {
@@ -29,26 +40,53 @@ fn main() -> ! {
 
     sprintln!("hIMUdev app v0.1.0");
 
-    // Configure I2C
-    let sda = pin!(pins, i2c0_sda).into_iof0();
-    let scl = pin!(pins, i2c0_scl).into_iof0();
-    let mut i2c = I2c::new(p.I2C0, sda, scl, Speed::Normal, clocks);
+    // Configure SPI pins
+    let mosi = pin!(pins, spi0_mosi).into_iof0();
+    let miso = pin!(pins, spi0_miso).into_iof0();
+    let sck = pin!(pins, spi0_sck).into_iof0();
+    let cs = pin!(pins, spi0_ss0).into_iof0();
 
-    // Read ID from BMP180 sensor (register 0xD0)
-    let mut send_buffer = [0xd0];
-    let mut recv_buffer = [0u8; 0x1];
-    match i2c.write_read(0x77, &send_buffer, &mut recv_buffer) {
-        Ok(_) => sprintln!("Data received = {:?}", recv_buffer),
-        Err(e) => sprintln!("Error: {:?}", e),
+    // Configure SPI
+    let spi_pins = (mosi, miso, sck, cs);
+    let mut spi = Spi::new(p.QSPI1, spi_pins, MODE_0, 1_000_000.hz(), clocks);
+
+    let mut buf = [0x80, 0x00];
+    let _ = spi.transfer(&mut buf);
+
+    sprintln!("{:?}", buf);
+
+    // get all 3 led pins in a tuple (each pin is it's own type here)
+    let led_pins = pins!(pins, (led_red, led_green, led_blue, led_yellow));
+    let mut tleds = hifive1::all(led_pins.0, led_pins.1, led_pins.2, led_pins.3);
+
+    // get leds as the Led trait in an array so we can index them
+    let ileds: [&mut dyn Led; 4] = [&mut tleds.0, &mut tleds.1, &mut tleds.2, &mut tleds.3];
+
+    // get the local interrupts struct
+    let clint = dr.core_peripherals.clint;
+
+    let mut led_status = [true, true, true, true]; // start on red
+    let mut current_led = 0; // start on red
+
+    // get the sleep struct
+    let mut sleep = Sleep::new(clint.mtimecmp, clocks);
+
+    const PERIOD: u32 = 1000; // 1s
+    loop {
+        // toggle led
+        led_status[current_led] = toggle_led(ileds[current_led], led_status[current_led]);
+
+        // increment index if we blinked back to blank
+        if led_status[current_led] {
+            current_led = (current_led + 1) % 4
+        }
+
+        let mut buf = [0x80, 0x00];
+        let _ = spi.transfer(&mut buf);
+
+        sprintln!("{:?}", buf);
+
+        // sleep for 1
+        sleep.delay_ms(PERIOD);
     }
-
-    // Read calibration data from BMP180 sensor (registers 0xAA..0xBF)
-    send_buffer = [0xaa];
-    let mut recv_buffer = [0u8; 0x15];
-    match i2c.write_read(0x77, &send_buffer, &mut recv_buffer) {
-        Ok(_) => sprintln!("Data received = {:?}", recv_buffer),
-        Err(e) => sprintln!("Error: {:?}", e),
-    }
-
-    loop {}
 }
